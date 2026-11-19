@@ -4,6 +4,8 @@ import {
 } from './core.js';
 import { unitCompare, validity } from './stats.js';
 import { ratioBar } from './charts.js';
+import { downloadICS, googleCalendarURL } from './ics.js';
+import { drawShareCard } from './sharecard.js';
 
 await boot();
 const main = $('#main');
@@ -79,7 +81,11 @@ function registrationHTML() {
     const p = app.profile || {};
     return `<section class="sheet" id="ticket-sec">
       <div class="sheet-head no-print"><h2>${icon('ticket')} 准考證</h2>
-        <button class="btn sm" id="print-ticket">${icon('printer')}<span>列印准考證</span></button></div>
+        <div class="btn-row">
+          <button class="btn sm" id="cal-ics">${icon('calendar')}<span>加入行事曆</span></button>
+          ${exam.answer_end ? `<a class="btn sm ghost" id="cal-google" target="_blank" rel="noopener">${icon('bell')}<span>Google 日曆提醒截止</span></a>` : ''}
+          <button class="btn sm" id="print-ticket">${icon('printer')}<span>列印准考證</span></button>
+        </div></div>
       <div class="ticket">
         <dl>
           <dt>考試</dt><dd>${esc(exam.title)}</dd>
@@ -94,6 +100,7 @@ function registrationHTML() {
         <div class="seal">蘇昊數理<br>模擬考<br>${esc(exam.code)}</div>
       </div>
       <p class="muted no-print" style="margin-top:10px">報名時間：${fmt(r.registered_at)}</p>
+      <p class="muted no-print" style="font-size:.85rem">「加入行事曆」會把題本開放、登錄答案截止（前 1 天和前 2 小時提醒）、成績公布等時間一次存進手機行事曆。在 Threads／IG 裡打開網頁如果下載不了，請點右上角改用 Safari 或 Chrome 開啟。</p>
     </section>`;
   }
   if (canRegister()) {
@@ -193,7 +200,10 @@ function resultHTML() {
   };
   return `<section class="sheet" id="result-sec">
     <div class="sheet-head"><h2>${icon('star')} 個人成績單</h2>
-      <button class="btn sm no-print" id="print-result">${icon('printer')}<span>列印成績單</span></button></div>
+      <div class="btn-row no-print">
+        ${r.valid !== false ? `<button class="btn sm primary" id="share-result">${icon('share')}<span>產生分享圖</span></button>` : ''}
+        <button class="btn sm" id="print-result">${icon('printer')}<span>列印成績單</span></button>
+      </div></div>
     <div class="btn-row" style="justify-content:space-between;margin-bottom:14px">
       <div style="display:flex;gap:10px;align-items:center">${LOGO}<div><b style="font-family:var(--serif)">${esc(exam.title)}</b><br>
         <span class="muted mono">${esc(state.registration.ticket_no)}・${esc(p.display_name || '')}${p.school ? '・' + esc(p.school) : ''}</span></div></div>
@@ -232,6 +242,35 @@ function resultHTML() {
   </section>`;
 }
 
+async function openShare(ev) {
+  const btn = ev.currentTarget;
+  btn.disabled = true;
+  let blob;
+  try { blob = await drawShareCard(exam, result); } catch (e) { toast('產生圖片失敗：' + e.message, 'error'); btn.disabled = false; return; }
+  btn.disabled = false;
+  const url = URL.createObjectURL(blob);
+  const file = new File([blob], `${exam.code || 'mock-exam'}-成績.png`, { type: 'image/png' });
+  const canShare = !!(navigator.canShare && navigator.canShare({ files: [file] }));
+  const p = modal({
+    title: '成績分享圖',
+    body: `<img src="${url}" alt="成績分享圖" class="share-preview">
+      <p class="muted" style="font-size:.85rem;margin:10px 0 0">圖上只有考試名稱、等級和答對題數，不會出現你的暱稱、學校或准考證號。${canShare ? '按「分享」可以直接傳到 Threads、IG 限動或 LINE。' : '下載後再到 Threads 或 IG 發文。'}</p>
+      ${canShare ? `<button class="btn" id="share-native" style="margin-top:10px;width:100%;justify-content:center">${icon('share')}<span>分享</span></button>` : ''}`,
+    confirmText: '下載圖片', cancelText: '關閉',
+  });
+  $('#share-native')?.addEventListener('click', async () => {
+    try { await navigator.share({ files: [file], text: `我在「${exam.title}」拿到 ${result.level || result.correct + ' 題'}！` }); }
+    catch (e) { if (e.name !== 'AbortError') toast('這個瀏覽器不支援直接分享，請改用下載', 'error'); }
+  });
+  const ok = await p;
+  if (ok) {
+    const a = document.createElement('a');
+    a.href = url; a.download = file.name;
+    document.body.append(a); a.click(); a.remove();
+  }
+  setTimeout(() => URL.revokeObjectURL(url), 60000);
+}
+
 function boardHTML() {
   return `<section class="sheet"><div class="sheet-head"><h2>${icon('flag')} 排行榜</h2><span class="muted">前 ${exam.board_size} 名・只顯示暱稱</span></div>
     ${board.length ? `<div class="table-wrap"><table><thead><tr><th class="c">名次</th><th>暱稱</th><th class="num">得分</th><th class="c">等級</th></tr></thead>
@@ -249,6 +288,11 @@ function bind() {
   });
   $('#print-ticket')?.addEventListener('click', () => printSection($('#ticket-sec')));
   $('#print-result')?.addEventListener('click', () => printSection($('#result-sec')));
+  const pageURL = location.href.split('#')[0];
+  $('#cal-ics')?.addEventListener('click', () => { downloadICS(exam, state.registration.ticket_no, pageURL); toast('已下載行事曆檔，打開它就能加入行事曆'); });
+  const g = $('#cal-google');
+  if (g) g.href = googleCalendarURL(exam, state.registration.ticket_no, pageURL);
+  $('#share-result')?.addEventListener('click', openShare);
 
   $$('.arow').forEach((row) => row.addEventListener('click', (e) => {
     const b = e.target.closest('.bub');
