@@ -358,3 +358,7 @@ legend { font-family: var(--serif); font-weight: 700; padding: 0 8px; }
   .ticket .seal { position: absolute; right: 10px; top: 14px; width: 64px; height: 64px; font-size: .62rem; }
   .ticket .tno { font-size: 1.15rem; }
 }
+
+/* 成績分享圖預覽 */
+.share-preview { display: block; width: 100%; max-height: 62vh; object-fit: contain; border: 1px solid var(--rule); border-radius: 8px; background: var(--paper-2); }
+a.btn { text-decoration: none; }
