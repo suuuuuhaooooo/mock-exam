@@ -385,3 +385,25 @@ a.btn { text-decoration: none; }
 .legal a { color: var(--accent); }
 .agree { margin: 14px 0; line-height: 1.7; }
 .agree a { color: var(--accent); }
+
+/* ================================================================
+   後台：寄提醒信
+   ================================================================ */
+.mail-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
+.mail-head h3 { margin: 0; }
+.mail-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 22px; align-items: start; }
+@media (max-width: 900px) { .mail-grid { grid-template-columns: 1fr; } }
+.mail-col-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 8px; }
+.mail-list { max-height: 420px; }
+.mail-list tr.off td { color: var(--muted); }
+.mail-note { font-size: .84rem; margin-top: 8px; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 2px 0 8px; }
+.chip { font: inherit; font-size: .8rem; padding: 2px 8px; border-radius: 999px; border: 1px dashed var(--rule); background: var(--paper-2); color: var(--ink-2); cursor: pointer; }
+.chip:hover { border-color: var(--accent); color: var(--accent); }
+#mbody { min-height: 300px; line-height: 1.7; font-family: var(--sans); }
+#mwarn .notice { margin-bottom: 10px; }
+.mail-preview-wrap { margin-top: 22px; }
+.mail-preview { border: 1px solid var(--rule); border-radius: var(--radius); padding: 16px 18px; background: #fff; color: #23263a; }
+.mail-preview .mp-meta { font-size: .86rem; color: #555; border-bottom: 1px solid #e5e2d8; padding-bottom: 10px; margin-bottom: 12px; display: grid; gap: 4px; }
+.mail-preview .mp-meta span { display: inline-block; width: 4em; color: #888; }
+.mail-actions { margin-top: 18px; padding-top: 16px; border-top: 1px dashed var(--rule); }

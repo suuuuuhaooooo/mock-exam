@@ -3,6 +3,7 @@ import {
   toLocalInput, fromLocalInput, statusOf, loginPrompt, qs,
 } from './core.js';
 import { CAP_NATURE_115, normKey, score, levelOf, bandOf, validity } from './stats.js';
+import { MAIL_VARS, DEFAULT_MAIL, mailVars, fill, unknownVars, toHtml } from './mailtpl.js';
 
 await boot();
 const main = $('#main');
@@ -343,6 +344,7 @@ async function tabRegs(sel) {
       <label class="field" style="margin:0;min-width:300px"><select id="esel">${examOptions(sel)}</select></label></div>
     <div class="toolbar">
       <label class="field"><span>搜尋（准考證、暱稱、email、學校）</span><input id="q"></label>
+      <button class="btn sm primary" id="mail" disabled>${icon('mail')}<span>寄提醒信</span></button>
       <button class="btn sm" id="csv">${icon('download')}<span>匯出 CSV</span></button>
       <a class="btn sm" href="report.html?id=${sel}">${icon('chart')}<span>分析報告</span></a>
       <button class="btn sm" id="anon">${icon('shield')}<span>匿名化本場個資</span></button>
@@ -422,6 +424,11 @@ async function tabRegs(sel) {
   };
   $('#q').oninput = draw;
   draw();
+
+  const pending = rows.filter((x) => !x.sub && !x.profiles?.banned && x.profiles?.email);
+  $('#mail').disabled = false;
+  $('#mail span').textContent = `寄提醒信（未交卷 ${pending.length} 人）`;
+  $('#mail').onclick = () => mailComposer(e, rows, () => { $('.toolbar').style.display = ''; draw(); });
 
   $('#csv').onclick = () => {
     const out = [['准考證號', '暱稱', 'Email', '年級', '學校', '團體', '報名時間', '交卷時間', '答對', '得分', '等級', '表現', '有效', '無效原因', ...key.map((z) => `Q${z.q}`)]];
@@ -608,3 +615,213 @@ async function tabLogs() {
     toast('已清空'); tabLogs();
   };
 }
+
+/* ================================================================
+   寄提醒信給未交卷的考生
+   ================================================================ */
+const BATCH = 40;              // Edge Function 每次最多 40 人
+const GMAIL_DAILY = 500;       // Gmail 每天寄信上限（一般帳號）
+let mailDraft = null;          // 切換考試時保留編輯中的內容
+
+async function mailComposer(e, rows, back) {
+  $('.toolbar').style.display = 'none';
+  const body = $('#regs-body');
+  body.innerHTML = '<div class="skeleton"></div>';
+
+  const [tpl, log] = await Promise.all([
+    sb.from('mail_templates').select('subject, body').eq('key', 'unsubmitted').maybeSingle(),
+    sb.from('mail_sends').select('registration_id, sent_at, ok, mail_batches!inner(exam_id)').eq('mail_batches.exam_id', e.id).order('sent_at', { ascending: false }),
+  ]);
+  if (tpl.error || log.error) {
+    const msg = (tpl.error || log.error).message;
+    body.innerHTML = `<div class="notice err">${icon('alert')}<span>讀不到寄信資料：${esc(msg)}<br>請先在 Supabase 執行 <code>0004_mail.sql</code>。</span></div>
+      <button class="btn sm" id="mback">返回名單</button>`;
+    $('#mback').onclick = back;
+    return;
+  }
+  const saved = tpl.data || DEFAULT_MAIL;
+  const draft = mailDraft || { subject: saved.subject, body: saved.body };
+  const last = {};
+  for (const r of log.data) if (r.ok && !last[r.registration_id]) last[r.registration_id] = r.sent_at;
+
+  // 收件人：已報名、未交卷；停權或沒有 email 的列出來但不能勾
+  const people = rows.filter((x) => !x.sub).map((x) => ({
+    id: x.id, ticket_no: x.ticket_no, display_name: x.profiles?.display_name, email: x.profiles?.email,
+    blocked: x.profiles?.banned ? '已停權' : !x.profiles?.email ? '沒有 email' : '',
+  }));
+  const picked = new Set(people.filter((p) => !p.blocked).map((p) => p.id));
+  const now = Date.now();
+  const closed = e.answer_end && new Date(e.answer_end).getTime() <= now;
+
+  body.innerHTML = `
+    <div class="mail-head">
+      <button class="btn sm ghost" id="mback">← 返回名單</button>
+      <h3>寄提醒信：${esc(e.code)}｜${esc(e.title)}</h3>
+    </div>
+    ${closed ? `<div class="notice warn">${icon('alert')}<span>登錄答案已經在 ${fmt(e.answer_end)} 截止，學生收到信也無法再送出。</span></div>` : ''}
+    <div class="mail-grid">
+      <div class="mail-col">
+        <div class="mail-col-head"><b>收件人</b><span class="muted" id="mcount"></span></div>
+        ${people.length ? `<div class="table-wrap mail-list"><table>
+          <thead><tr><th class="c"><input type="checkbox" id="mall" title="全選"></th><th>准考證號</th><th>暱稱</th><th>Email</th><th>上次提醒</th></tr></thead>
+          <tbody>${people.map((p) => `<tr class="${p.blocked ? 'off' : ''}">
+            <td class="c"><input type="checkbox" data-pick="${p.id}" ${p.blocked ? 'disabled' : 'checked'}></td>
+            <td class="mono">${esc(p.ticket_no)}</td><td>${esc(p.display_name || '')}</td>
+            <td>${p.blocked ? `<span class="tag red">${p.blocked}</span>` : esc(p.email)}</td>
+            <td>${last[p.id] ? `<span class="tag amber">${fmt(last[p.id], false)}</span>` : '<span class="muted">—</span>'}</td></tr>`).join('')}</tbody></table></div>`
+          : '<p class="muted">這場沒有未交卷的考生。</p>'}
+        <p class="muted mail-note">只會寄給「已報名、還沒送出答案、沒被停權」的考生，伺服器寄出前會再檢查一次。已經交卷的人不會出現在這裡。</p>
+      </div>
+
+      <div class="mail-col">
+        <label class="field"><span>主旨</span><input id="msub" maxlength="200"></label>
+        <div class="field"><span>內文（點下面的變數插入到游標位置，寄出時會換成每個人自己的資料）</span>
+          <div class="chips">${MAIL_VARS.map(([k, d]) => `<button type="button" class="chip" data-var="${k}" title="${esc(d)}">{${k}}</button>`).join('')}</div>
+          <textarea id="mbody" rows="15" maxlength="5000"></textarea></div>
+        <div id="mwarn"></div>
+        <div class="btn-row">
+          <button class="btn xs ghost" id="mreset">還原成預設範本</button>
+          <button class="btn xs ghost" id="msave">存成預設範本</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="mail-preview-wrap">
+      <div class="mail-col-head"><b>預覽</b>
+        <label class="field" style="margin:0"><select id="mwho"></select></label></div>
+      <div class="mail-preview" id="mprev"></div>
+    </div>
+
+    <div class="btn-row mail-actions">
+      <button class="btn" id="mtest">${icon('mail')}<span>寄測試信給自己</span></button>
+      <button class="btn primary" id="msend">${icon('send')}<span>寄出</span></button>
+      <span class="muted">寄件人是你在 Supabase 設定的 Gmail，學生直接回信就會寄到那個信箱。</span>
+    </div>`;
+
+  const subEl = $('#msub'), bodyEl = $('#mbody');
+  subEl.value = draft.subject; bodyEl.value = draft.body;
+  $('#mback').onclick = () => { mailDraft = null; back(); };
+
+  const chosen = () => people.filter((p) => picked.has(p.id));
+  const refresh = () => {
+    mailDraft = { subject: subEl.value, body: bodyEl.value };
+    const list = chosen();
+    $('#mcount') && ($('#mcount').textContent = `已選 ${list.length} / ${people.filter((p) => !p.blocked).length} 人`);
+    if ($('#mall')) {
+      const avail = people.filter((p) => !p.blocked).length;
+      $('#mall').checked = avail > 0 && list.length === avail;
+      $('#mall').indeterminate = list.length > 0 && list.length < avail;
+    }
+    // 預覽對象
+    const who = $('#mwho');
+    const keep = who.value;
+    const pool = list.length ? list : people.filter((p) => !p.blocked);
+    who.innerHTML = pool.length ? pool.map((p) => `<option value="${p.id}">${esc(p.ticket_no)}｜${esc(p.display_name || '')}</option>`).join('')
+      : '<option value="">（範例考生）</option>';
+    if (pool.some((p) => p.id === keep)) who.value = keep;
+    const p = pool.find((x) => x.id === who.value) || { ticket_no: `${e.code}-0001`, display_name: '小明', email: 'student@example.com' };
+    const vars = mailVars(e, p, siteUrl());
+    $('#mprev').innerHTML = `<div class="mp-meta"><div><span>收件人</span>${esc(p.email || '')}</div><div><span>主旨</span><b>${esc(fill(subEl.value, vars))}</b></div></div>${toHtml(fill(bodyEl.value, vars))}`;
+    // 檢查
+    const bad = unknownVars(subEl.value, bodyEl.value);
+    const warns = [];
+    if (bad.length) warns.push(`不認得的變數：${bad.map((k) => `{${esc(k)}}`).join('、')}。請改成上面列出的變數，或把大括號拿掉。`);
+    if (!subEl.value.trim() || !bodyEl.value.trim()) warns.push('主旨和內文都不能空白。');
+    if (list.length > GMAIL_DAILY - 50) warns.push(`一般 Gmail 帳號每天大約只能寄 ${GMAIL_DAILY} 封，這次選了 ${list.length} 人，超過的部分會寄送失敗。`);
+    $('#mwarn').innerHTML = warns.map((w) => `<div class="notice ${bad.length || !subEl.value.trim() || !bodyEl.value.trim() ? 'err' : 'warn'}">${icon('alert')}<span>${w}</span></div>`).join('');
+    const blocking = bad.length > 0 || !subEl.value.trim() || !bodyEl.value.trim();
+    $('#msend').disabled = blocking || !list.length;
+    $('#mtest').disabled = blocking || !pool.length;
+    $('#msend span').textContent = list.length ? `寄出（${list.length} 人）` : '寄出';
+  };
+
+  $$('[data-pick]').forEach((c) => (c.onchange = () => { c.checked ? picked.add(c.dataset.pick) : picked.delete(c.dataset.pick); refresh(); }));
+  $('#mall') && ($('#mall').onchange = (ev) => {
+    $$('[data-pick]:not(:disabled)').forEach((c) => { c.checked = ev.target.checked; c.checked ? picked.add(c.dataset.pick) : picked.delete(c.dataset.pick); });
+    refresh();
+  });
+  subEl.oninput = refresh; bodyEl.oninput = refresh; $('#mwho').onchange = refresh;
+  let lastFocus = bodyEl;
+  subEl.onfocus = () => (lastFocus = subEl); bodyEl.onfocus = () => (lastFocus = bodyEl);
+  $$('[data-var]').forEach((b) => (b.onclick = () => {
+    const el = lastFocus, v = `{${b.dataset.var}}`;
+    const s = el.selectionStart ?? el.value.length, en = el.selectionEnd ?? s;
+    el.value = el.value.slice(0, s) + v + el.value.slice(en);
+    el.focus(); el.selectionStart = el.selectionEnd = s + v.length;
+    refresh();
+  }));
+  $('#mreset').onclick = async () => {
+    if (!(await modal({ title: '還原成預設範本？', body: '<p>目前編輯的主旨和內文會被取代。</p>', confirmText: '還原' }))) return;
+    subEl.value = saved.subject; bodyEl.value = saved.body; refresh();
+  };
+  $('#msave').onclick = async () => {
+    const { error } = await sb.from('mail_templates').upsert({ key: 'unsubmitted', subject: subEl.value, body: bodyEl.value, updated_at: new Date().toISOString() });
+    if (error) return toast(rpcError(error), 'error');
+    saved.subject = subEl.value; saved.body = bodyEl.value;
+    toast('已存成預設範本，之後每場都會用這份');
+  };
+
+  const call = async (ids, test) => {
+    const { data, error } = await sb.functions.invoke('send-reminder', {
+      body: { exam_id: e.id, registration_ids: ids, subject: subEl.value, body: bodyEl.value, test },
+    });
+    if (error) {
+      let msg = error.message;
+      try { msg = (await error.context.json()).error || msg; } catch {}
+      if (/Failed to send a request|Failed to fetch/i.test(msg)) msg = '連不到寄信服務，請確認 Edge Function「send-reminder」已部署';
+      throw new Error(msg);
+    }
+    return data;
+  };
+
+  $('#mtest').onclick = async (ev) => {
+    const btn = ev.currentTarget;
+    const id = $('#mwho').value || people.find((p) => !p.blocked)?.id;
+    if (!id) return;
+    btn.disabled = true;
+    try {
+      const r = await call([id], true);
+      if (r.failed?.length) toast(`測試信寄送失敗：${r.failed[0].error}`, 'error');
+      else if (r.sent?.length) toast(`已寄測試信到 ${r.to}，內容用 ${$('#mwho').selectedOptions[0]?.textContent} 的資料`);
+      else toast('這位考生已交卷或不能收信，換一位試試', 'error');
+    } catch (err) { toast(err.message, 'error'); }
+    btn.disabled = false;
+  };
+
+  $('#msend').onclick = async (ev) => {
+    const btn = ev.currentTarget;
+    const list = chosen();
+    if (!list.length) return;
+    const again = list.filter((p) => last[p.id]).length;
+    const vars = mailVars(e, list[0], siteUrl());
+    if (!(await modal({ title: `寄提醒信給 ${list.length} 位考生？`, confirmText: '確定寄出',
+      body: `<p>主旨：<b>${esc(fill(subEl.value, vars))}</b>${list.length > 1 ? '（每個人的暱稱、准考證號會不一樣）' : ''}</p>
+        ${again ? `<div class="notice warn">${icon('alert')}<span>其中 ${again} 人之前已經收過提醒信。</span></div>` : ''}
+        <p class="muted">寄出後無法收回。建議先按「寄測試信給自己」確認內容。</p>` }))) return;
+
+    btn.disabled = true;
+    const sent = [], failed = [];
+    let skipped = 0;
+    for (let i = 0; i < list.length; i += BATCH) {
+      btn.querySelector('span').textContent = `寄送中 ${Math.min(i + BATCH, list.length)} / ${list.length}`;
+      try {
+        const r = await call(list.slice(i, i + BATCH).map((p) => p.id), false);
+        sent.push(...r.sent); failed.push(...r.failed); skipped += r.skipped || 0;
+      } catch (err) {
+        list.slice(i, i + BATCH).forEach((p) => failed.push({ ticket_no: p.ticket_no, error: err.message }));
+        if (i === 0) break;   // 第一批就失敗（例如沒部署、Gmail 密碼錯）就不用繼續試
+      }
+    }
+    mailDraft = { subject: subEl.value, body: bodyEl.value };
+    await modal({ title: failed.length ? '部分信件沒有寄出' : '寄送完成', cancelText: '', confirmText: '好',
+      body: `<p>成功 <b>${sent.length}</b> 封${failed.length ? `・失敗 <b style="color:var(--stamp)">${failed.length}</b> 封` : ''}${skipped ? `・略過 ${skipped} 人（寄送前已交卷或被停權）` : ''}。</p>
+        ${failed.length ? `<div class="table-wrap" style="max-height:240px"><table><thead><tr><th>准考證號</th><th>原因</th></tr></thead><tbody>${
+          failed.map((f) => `<tr><td class="mono">${esc(f.ticket_no)}</td><td class="wrap">${esc(f.error)}</td></tr>`).join('')}</tbody></table></div>` : ''}` });
+    mailComposer(e, rows, back);   // 重新載入「上次提醒」
+  };
+
+  refresh();
+}
+
+// 前端網址（考場連結用；伺服器寄信時用 SITE_URL 設定）
+const siteUrl = () => location.href.replace(/\/[^/]*$/, '');
