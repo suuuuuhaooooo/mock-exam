@@ -393,7 +393,7 @@ async function tabRegs(sel) {
         }).join('')}</p>` });
     }));
     $$('[data-clear]').forEach((b) => (b.onclick = async () => {
-      if (!(await modal({ title: '清除這位考生的作答？', body: '<p>會保留報名與准考證號，只刪除答案。無法復原。</p>', danger: true, confirmText: '清除' }))) return;
+      if (!(await modal({ title: '清除這位考生的作答？', body: '<p>會保留報名與准考證號，只刪除答案，無法復原。</p><p>清除後，如果還在登錄期間，考生可以<b>重新送出一次</b>（答案只能送出一次，學生按錯時用這個）。</p>', danger: true, confirmText: '清除' }))) return;
       const { error } = await sb.from('submissions').delete().eq('registration_id', b.dataset.clear);
       if (error) return toast(rpcError(error), 'error');
       toast('已清除'); tabRegs(sel);
@@ -546,7 +546,7 @@ async function tabUsers() {
     }));
     $$('.ban').forEach((c) => (c.onchange = async () => {
       const tr = c.closest('tr');
-      if (c.checked && !(await modal({ title: '停權這個帳號？', danger: true, confirmText: '停權', body: '<p>停權後不能再報名任何考試，也不能修改或送出答案。已經交的作答不受影響，要排除請到「報名與作答」標記無效。</p>' }))) { c.checked = false; return; }
+      if (c.checked && !(await modal({ title: '停權這個帳號？', danger: true, confirmText: '停權', body: '<p>停權後不能再報名任何考試，也不能送出答案。已經交的作答不受影響，要排除請到「報名與作答」標記無效。</p>' }))) { c.checked = false; return; }
       const { error: er } = await sb.from('profiles').update({ banned: c.checked }).eq('id', tr.dataset.id);
       if (er) { c.checked = !c.checked; return toast(rpcError(er), 'error'); }
       const u = data.find((x) => x.id === tr.dataset.id); if (u) u.banned = c.checked;

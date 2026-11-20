@@ -30,7 +30,7 @@ async function load() {
   try {
     const d = localStorage.getItem(draftKey());
     if (d && d.length === exam.num_questions && canAnswer() && d !== answers) { answers = d; dirty = true; }
-    else if (d && reached(exam.answer_end, now())) localStorage.removeItem(draftKey());   // 截止後清掉沒用的草稿
+    else if (d && (state.submission || reached(exam.answer_end, now()))) localStorage.removeItem(draftKey());   // 已送出或已截止就清掉草稿
   } catch {}
 
   result = null; board = null;
@@ -46,7 +46,8 @@ async function load() {
 }
 
 const canRegister = () => within(exam.register_start, exam.register_end, now());
-const canAnswer = () => !!state?.registration && within(exam.answer_start, exam.answer_end, now());
+// 只能送出一次：送出過就不能再劃記
+const canAnswer = () => !!state?.registration && !state.submission && within(exam.answer_start, exam.answer_end, now());
 
 function render() {
   const t = now();
@@ -158,13 +159,13 @@ function answerCardHTML() {
   }
   const answered = [...answers].filter((c) => c !== '-').length;
   let tip = '';
-  if (editable) tip = `<div class="notice">${icon('pencil')}<span>點選泡泡劃記，再點一次可以取消。截止前（${fmt(exam.answer_end)}）都可以修改，記得按「送出答案」。</span></div>${rulesHTML()}`;
+  if (editable) tip = `<div class="notice">${icon('pencil')}<span>點選泡泡劃記，再點一次可以取消。答案<b>只能送出一次</b>，送出後就不能修改，請檢查完再按「送出答案」。截止時間：${fmt(exam.answer_end)}。</span></div>${rulesHTML()}`;
   else if (!reached(exam.answer_start, now())) tip = `<div class="notice warn">${icon('clock')}<span>答案登錄將於 ${fmt(exam.answer_start)} 開放。</span></div>`;
   else if (!state.submission) tip = `<div class="notice err">${icon('alert')}<span>答案登錄已截止，你沒有送出答案。</span></div>`;
-  else tip = `<div class="notice ok">${icon('check')}<span>已截止。這是你最後送出的答案（${fmt(state.submission.updated_at)}）。${key ? '綠框是正解。' : `正解將於 ${fmt(exam.release_key_at)} 公布。`}</span></div>`;
+  else tip = `<div class="notice ok">${icon('check')}<span>${reached(exam.answer_end, now()) ? '已截止。' : ''}你已在 ${fmt(state.submission.updated_at)} 送出答案，不能再修改。${key ? '綠框是正解。' : `正解將於 ${fmt(exam.release_key_at)} 公布。`}</span></div>`;
   return `<section class="sheet">
     <div class="sheet-head"><h2>${icon('pencil')} 答案卡</h2>
-      ${state.submission ? `<span class="muted">上次送出：${fmt(state.submission.updated_at)}</span>` : ''}</div>
+      ${state.submission ? `<span class="muted">送出時間：${fmt(state.submission.updated_at)}</span>` : ''}</div>
     ${tip}
     <div class="acard">
       <div class="acard-head"><span>國中教育會考模擬考　答案卡</span><span class="mono">${esc(state.registration.ticket_no)}</span></div>
@@ -317,7 +318,7 @@ function bind() {
   }));
 
   $('#clear-btn')?.addEventListener('click', async () => {
-    if (!(await modal({ title: '清除全部劃記？', body: '<p>只會清除畫面上的劃記，按「送出答案」後才會更新。</p>', confirmText: '清除', danger: true }))) return;
+    if (!(await modal({ title: '清除全部劃記？', body: '<p>只會清除畫面上的劃記，還沒有送出。</p>', confirmText: '清除', danger: true }))) return;
     answers = '-'.repeat(exam.num_questions); dirty = true; render();
   });
 
@@ -325,17 +326,26 @@ function bind() {
     const btn = ev.currentTarget;
     const blank = [...answers].map((c, i) => (c === '-' ? i + 1 : null)).filter(Boolean);
     const v = validity(answers, exam);
-    if (!v.valid) {
-      const ok = await modal({ title: '這份答案會被判定為無效', danger: true, confirmText: '仍然送出',
-        body: `<p>原因：${esc(v.reason)}。</p><p>無效作答不列入全體統計、百分等級和排行榜。請認真作答後再送出。</p>` });
-      if (!ok) return;
-    } else if (blank.length) {
-      const ok = await modal({ title: `還有 ${blank.length} 題未作答`, body: `<p>未作答：${blank.slice(0, 30).join('、')}${blank.length > 30 ? '…' : ''}</p><p>仍然要送出嗎？截止前都可以再修改。</p>`, confirmText: '仍然送出' });
-      if (!ok) return;
-    }
+    // 只能送出一次：不論有沒有漏題，送出前都要確認
+    const warn = !v.valid
+      ? `<div class="notice err">${icon('alert')}<span>這份答案會被判定為<b>無效作答</b>（${esc(v.reason)}），不列入全體統計、百分等級和排行榜。</span></div>`
+      : blank.length
+        ? `<div class="notice warn">${icon('alert')}<span>還有 ${blank.length} 題未作答：${blank.slice(0, 30).join('、')}${blank.length > 30 ? '…' : ''}</span></div>`
+        : '';
+    const ok = await modal({
+      title: '確定送出答案？', danger: !v.valid, confirmText: '確定送出', cancelText: '再檢查一下',
+      body: `${warn}<p>已作答 ${exam.num_questions - blank.length} / ${exam.num_questions} 題。</p>
+        <p><b>答案只能送出一次，送出後就不能修改。</b></p>`,
+    });
+    if (!ok) return;
     btn.disabled = true;
     const { error } = await sb.rpc('submit_answers', { p_exam: id, p_answers: answers });
-    if (error) { toast(rpcError(error), 'error'); btn.disabled = false; return; }
+    if (error) {
+      toast(rpcError(error), 'error');
+      if (/已送出/.test(error.message)) { dirty = false; try { localStorage.removeItem(draftKey()); } catch {} await refresh(); }
+      else btn.disabled = false;
+      return;
+    }
     dirty = false;
     try { localStorage.removeItem(draftKey()); } catch {}
     toast('答案已送出');
