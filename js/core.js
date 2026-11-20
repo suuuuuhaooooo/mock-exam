@@ -157,11 +157,18 @@ export function modal({ title, body, confirmText = '確定', cancelText = '取�
       ok.disabled = true;
       $('.ttc', wrap).addEventListener('input', (e) => { ok.disabled = e.target.value.trim() !== typeToConfirm; });
     }
-    const close = (v) => { wrap.remove(); resolve(v); };
+    // 沒有「取消」按鈕的對話框（例如第一次登入必填資料）不能用點背景或 Esc 關掉
+    const dismissable = !!cancelText;
+    const close = (v) => { document.removeEventListener('keydown', onKey, true); wrap.remove(); resolve(v); };
+    const onKey = (e) => {
+      if (e.key === 'Escape' && dismissable) { e.preventDefault(); close(null); }
+      else if (e.key === 'Enter' && e.target.matches?.('input') && !ok.disabled) { e.preventDefault(); close(wrap); }
+    };
+    document.addEventListener('keydown', onKey, true);
     wrap.addEventListener('click', (e) => {
       const a = e.target.closest('[data-a]')?.dataset.a;
       if (a === 'ok') close(wrap);
-      else if (a === 'no' || e.target === wrap) close(null);
+      else if (a === 'no' || (e.target === wrap && dismissable)) close(null);
     });
     setTimeout(() => ($('input, select, textarea', wrap) || ok).focus(), 30);
   });
@@ -311,6 +318,13 @@ function renderHeader() {
 
 const GOOGLE_G = `<svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path fill="#fff" d="M21.6 12.2c0-.7-.1-1.4-.2-2H12v3.8h5.4a4.6 4.6 0 0 1-2 3v2.5h3.2c1.9-1.7 3-4.3 3-7.3z" opacity=".95"/><path fill="#fff" d="M12 22c2.7 0 5-.9 6.6-2.4l-3.2-2.5c-.9.6-2 1-3.4 1-2.6 0-4.8-1.8-5.6-4.1H3.1v2.6A10 10 0 0 0 12 22z" opacity=".8"/><path fill="#fff" d="M6.4 14a6 6 0 0 1 0-3.9V7.5H3.1a10 10 0 0 0 0 9z" opacity=".65"/><path fill="#fff" d="M12 6c1.5 0 2.8.5 3.8 1.5l2.9-2.9A10 10 0 0 0 3.1 7.5L6.4 10C7.2 7.8 9.4 6 12 6z" opacity=".9"/></svg>`;
 
+// 授權標章：Creative Commons 官方 SVG（向量，任何縮放、高解析螢幕都不會糊）
+const CC = {
+  label: 'CC BY-NC-ND 4.0',
+  deed: 'https://creativecommons.org/licenses/by-nc-nd/4.0/deed.zh_TW',
+  badge: 'https://mirrors.creativecommons.org/presskit/buttons/88x31/svg/by-nc-nd.svg',
+};
+
 function renderFooter() {
   const f = $('#site-footer');
   if (!f) return;
@@ -322,11 +336,8 @@ function renderFooter() {
         <a href="${AUTHOR.sponsor}" target="_blank" rel="noopener">贊助作者</a>
       </div>
       <div class="foot-cc">
-        <a href="https://creativecommons.org/licenses/by-nc-nd/4.0/deed.zh_TW" target="_blank" rel="noopener license" title="CC BY-NC-ND 4.0">
-          <svg viewBox="0 0 88 31" class="cc" aria-label="CC BY-NC-ND"><rect x=".5" y=".5" width="87" height="30" rx="4" fill="none" stroke="currentColor"/>
-          <circle cx="15.5" cy="15.5" r="10" fill="none" stroke="currentColor" stroke-width="1.6"/>
-          <text x="15.5" y="19.6" text-anchor="middle" font-size="10.5" font-weight="700" fill="currentColor" font-family="Arial">cc</text>
-          <text x="56" y="19.8" text-anchor="middle" font-size="10" font-weight="700" fill="currentColor" font-family="Arial">BY-NC-ND</text></svg>
+        <a href="${CC.deed}" target="_blank" rel="noopener license" title="${CC.label}">
+          <img class="cc" src="${CC.badge}" width="88" height="31" alt="${CC.label}" loading="lazy" decoding="async">
         </a>
         <span>made by suuuuuhaooooo</span>
       </div>
@@ -358,7 +369,9 @@ window.__signIn = signIn;
 
 export function csvDownload(filename, rows) {
   const text = rows.map((r) => r.map((c) => {
-    const s = String(c ?? '');
+    let s = String(c ?? '');
+    // 暱稱、學校是學生自己填的：開頭是 = + @ 之類的字元，Excel 會當成公式執行，前面加 ' 擋掉
+    if (/^[=+@\t\r]/.test(s) || /^-[^\d-]/.test(s)) s = "'" + s;
     return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
   }).join(',')).join('\r\n');
   const blob = new Blob(['﻿' + text], { type: 'text/csv;charset=utf-8' });

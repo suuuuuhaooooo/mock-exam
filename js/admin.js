@@ -137,7 +137,8 @@ async function editor(eid, copy = false) {
       </fieldset>
 
       <fieldset><legend>題本與詳解</legend>
-        <p class="muted">放雲端硬碟或任何網址。題本在「題本開放下載」之後、詳解在「公布詳解連結」之後才會出現在考場頁；時間到之前，學生連網址都拿不到。</p>
+        <p class="muted">放雲端硬碟或任何網址。題本在「題本開放下載」之後、詳解在「公布詳解連結」之後才會出現在考場頁；時間到之前，學生連網址都拿不到；時間到了，也只有<b>已報名</b>的考生拿得到（沒報名、沒登入的人看不到）。</p>
+        <p class="muted">提醒：雲端硬碟連結如果設成「知道連結的人都能檢視」，報名者還是可以把網址轉給別人。</p>
         <div class="grid-2">
           <label class="field"><span>題本連結</span><input name="booklet_url" type="url" value="${esc(links.booklet_url || '')}" placeholder="https://"></label>
           <label class="field"><span>詳解連結</span><input name="solution_url" type="url" value="${esc(links.solution_url || '')}" placeholder="https://"></label>

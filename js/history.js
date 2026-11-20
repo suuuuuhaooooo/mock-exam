@@ -9,6 +9,7 @@ if (!app.user) {
 } else {
   const { data, error } = await sb.from('registrations')
     .select('id, ticket_no, registered_at, exam_id, exams(*), submissions(answers, updated_at)')
+    .eq('user_id', app.user.id)   // 管理員看得到所有人的報名，這裡只列自己的
     .order('registered_at', { ascending: false });
   const rows = (data || []).filter((r) => r.exams);
   const now = Date.now();

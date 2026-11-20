@@ -29,7 +29,8 @@ const { data: exams, error } = await sb.from('exams').select('*')
 const now = Date.now();
 let myRegs = new Set();
 if (app.user) {
-  const { data } = await sb.from('registrations').select('exam_id');
+  // 管理員的存取規則看得到所有人的報名，所以要限定自己
+  const { data } = await sb.from('registrations').select('exam_id').eq('user_id', app.user.id);
   myRegs = new Set((data || []).map((r) => r.exam_id));
 }
 

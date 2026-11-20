@@ -30,6 +30,7 @@ async function load() {
   try {
     const d = localStorage.getItem(draftKey());
     if (d && d.length === exam.num_questions && canAnswer() && d !== answers) { answers = d; dirty = true; }
+    else if (d && reached(exam.answer_end, now())) localStorage.removeItem(draftKey());   // 截止後清掉沒用的草稿
   } catch {}
 
   result = null; board = null;
@@ -125,10 +126,15 @@ function linksHTML() {
   if (!state.booklet_url && exam.exam_start && !reached(exam.exam_start, now())) locked.push(`題本 ${fmt(exam.exam_start, false)}`);
   if (!state.solution_url && exam.release_solution_at && !reached(exam.release_solution_at, now())) locked.push(`詳解 ${fmt(exam.release_solution_at, false)}`);
   if (exam.release_report_at && !reached(exam.release_report_at, now())) locked.push(`全體分析 ${fmt(exam.release_report_at, false)}`);
-  if (!items.length && !locked.length) return '';
+  // 題本、詳解只給有報名的考生（後端也只回傳給報名者）
+  const regOnly = !state.registration && !app.isAdmin && (exam.exam_start || exam.release_solution_at)
+    ? `<div class="notice warn" style="margin-top:12px">${icon('lock')}<span>題本與詳解只開放給<b>已報名</b>的考生下載${
+        !app.user ? '，請先登入並報名。' : canRegister() ? '，請先完成上方報名。' : '。'}</span></div>` : '';
+  if (!items.length && !locked.length && !regOnly) return '';
   return `<section class="sheet"><div class="sheet-head"><h2>${icon('book')} 題本與資料</h2></div>
-    <div class="btn-row">${items.join('')}</div>
-    ${locked.length ? `<p class="muted" style="margin:12px 0 0">${icon('lock')} 尚未開放：${locked.map(esc).join('、')}</p>` : ''}</section>`;
+    ${items.length ? `<div class="btn-row">${items.join('')}</div>` : ''}
+    ${locked.length ? `<p class="muted" style="margin:12px 0 0">${icon('lock')} 尚未開放：${locked.map(esc).join('、')}</p>` : ''}
+    ${regOnly}</section>`;
 }
 
 function answerCardHTML() {
@@ -279,10 +285,12 @@ function boardHTML() {
 }
 
 function bind() {
+  // 注意：await 之後 ev.currentTarget 會變成 null，按鈕要先存起來
   $('#reg-btn')?.addEventListener('click', async (ev) => {
-    ev.currentTarget.disabled = true;
-    const { data, error } = await sb.rpc('register_exam', { p_exam: id, p_group_code: $('#gcode')?.value || null });
-    if (error) { toast(rpcError(error), 'error'); ev.currentTarget.disabled = false; return; }
+    const btn = ev.currentTarget;
+    btn.disabled = true;
+    const { data, error } = await sb.rpc('register_exam', { p_exam: id, p_group_code: $('#gcode')?.value.trim() || null });
+    if (error) { toast(rpcError(error), 'error'); btn.disabled = false; return; }
     toast(`報名成功！准考證號 ${data.ticket_no}`);
     await refresh();
   });
@@ -314,6 +322,7 @@ function bind() {
   });
 
   $('#save-btn')?.addEventListener('click', async (ev) => {
+    const btn = ev.currentTarget;
     const blank = [...answers].map((c, i) => (c === '-' ? i + 1 : null)).filter(Boolean);
     const v = validity(answers, exam);
     if (!v.valid) {
@@ -324,9 +333,9 @@ function bind() {
       const ok = await modal({ title: `還有 ${blank.length} 題未作答`, body: `<p>未作答：${blank.slice(0, 30).join('、')}${blank.length > 30 ? '…' : ''}</p><p>仍然要送出嗎？截止前都可以再修改。</p>`, confirmText: '仍然送出' });
       if (!ok) return;
     }
-    ev.currentTarget.disabled = true;
+    btn.disabled = true;
     const { error } = await sb.rpc('submit_answers', { p_exam: id, p_answers: answers });
-    if (error) { toast(rpcError(error), 'error'); ev.currentTarget.disabled = false; return; }
+    if (error) { toast(rpcError(error), 'error'); btn.disabled = false; return; }
     dirty = false;
     try { localStorage.removeItem(draftKey()); } catch {}
     toast('答案已送出');

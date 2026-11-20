@@ -334,7 +334,8 @@ legend { font-family: var(--serif); font-weight: 700; padding: 0 8px; }
 .foot-brand b { color: var(--ink); font-family: var(--serif); display: block; }
 .foot-links { display: flex; gap: 16px; }
 .foot-cc { display: flex; gap: 10px; align-items: center; }
-.cc { width: 88px; height: 31px; color: var(--ink-2); }
+.foot-cc a { display: block; line-height: 0; }
+.cc { display: block; width: 88px; height: 31px; }
 
 .skeleton { height: 120px; border-radius: 10px; background: linear-gradient(90deg, var(--paper-2), var(--sheet), var(--paper-2)); background-size: 200% 100%; animation: sk 1.4s infinite; }
 @keyframes sk { to { background-position: -200% 0; } }
