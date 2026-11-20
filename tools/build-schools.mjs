@@ -1,5 +1,7 @@
 // 把教育部「國民中學名錄」「附設國中部名錄」CSV 轉成 js/schools.js
 //
+// 教育部統計處網站下載的是 .xlsx：用 Excel 開啟後「另存新檔 → CSV UTF-8」即可。
+//
 // 用法（在 repo 根目錄）：
 //   node tools/build-schools.mjs 國民中學名錄.csv 附設國中部名錄.csv
 //
@@ -50,7 +52,11 @@ function countyOf(raw, addr) {
 const all = new Map();
 const years = new Set();
 for (const file of process.argv.slice(2)) {
-  const rows = parseCsv(decode(readFileSync(file)));
+  let rows = parseCsv(decode(readFileSync(file)));
+  // 教育部的檔案前面常有「115學年度國民中學名錄」標題列，表頭不一定在第一列
+  const hi = rows.findIndex((r) => r.some((x) => norm(x) === '代碼' || norm(x) === '學校代碼') && r.some((x) => norm(x).includes('學校名稱')));
+  const titleYear = rows.slice(0, Math.max(hi, 0)).map((r) => r.join('')).join('').match(/(\d{2,3})\s*學年/)?.[1];
+  if (hi > 0) rows = rows.slice(hi);
   const head = rows[0].map(norm);
   const col = (...names) => head.findIndex((h) => names.some((n) => h.includes(n)));
   const iCode = col('代碼'), iName = col('學校名稱'), iCounty = col('縣市'), iAddr = col('地址'), iYear = col('學年');
@@ -67,8 +73,9 @@ for (const file of process.argv.slice(2)) {
     all.set(code, { code, name, county });
     n++;
   }
-  if (latest) years.add(latest);
-  console.log(`${file}：${n} 所${latest ? `（${latest} 學年）` : ''}`);
+  const yr = latest || (titleYear ? +titleYear : 0);
+  if (yr) years.add(yr);
+  console.log(`${file}：${n} 所${yr ? `（${yr} 學年）` : ''}`);
 }
 if (!all.size) { console.error('沒有讀到任何學校'); process.exit(1); }
 
