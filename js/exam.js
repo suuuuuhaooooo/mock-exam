@@ -121,7 +121,7 @@ function registrationHTML() {
 
 function linksHTML() {
   const items = [];
-  if (state.booklet_url) items.push(`<a class="btn" href="${esc(state.booklet_url)}" target="_blank" rel="noopener">${icon('book')}<span>線上閱覽題本</span></a>`);
+  if (state.booklet_url) items.push(`<a class="btn" href="${esc(state.booklet_url)}" target="_blank" rel="noopener">${icon('book')}<span>題本</span></a>`);
   if (state.solution_url) items.push(`<a class="btn" href="${esc(state.solution_url)}" target="_blank" rel="noopener">${icon('link')}<span>詳解</span></a>`);
   if (reached(exam.release_report_at, now()) || app.isAdmin) items.push(`<a class="btn" href="report.html?id=${exam.id}">${icon('chart')}<span>全體分析報告</span></a>`);
   const locked = [];
