@@ -267,25 +267,76 @@ async function loadProfile() {
   app.groups = g.data || [];
 }
 
-export async function editProfile(required = false) {
+export const GRADES = ['國一', '國二', '國三', '高中', '其他'];
+// 考生資料是否齊全（報名需要暱稱、年級、學校）
+export const profileComplete = (p) => !!(p?.display_name && p?.grade && p?.school);
+
+export async function editProfile(required = false, draft = null) {
   const p = app.profile || {};
-  const grades = ['國一', '國二', '國三', '高中', '其他'];
-  const w = await modal({
-    title: required ? '第一次登入：填寫考生資料' : '編輯考生資料',
-    body: `<p class="muted">暱稱會出現在准考證和排行榜上，請不要填真實全名。</p>
-      ${required ? '<p class="muted" style="font-size:.85rem">繼續使用即表示同意<a href="terms.html" target="_blank">使用條款</a>與<a href="privacy.html" target="_blank">隱私權政策</a>。未滿 18 歲請先經家長同意。</p>' : ''}
-      <label class="field"><span>暱稱（必填，20 字內）</span><input name="dn" maxlength="20" value="${esc(p.display_name || '')}"></label>
-      <label class="field"><span>年級</span><select name="gr"><option value="">不填</option>${grades.map((g) => `<option ${p.grade === g ? 'selected' : ''}>${g}</option>`).join('')}</select></label>
-      <label class="field"><span>學校（選填）</span><input name="sc" maxlength="40" value="${esc(p.school || '')}"></label>`,
+  const { SCHOOLS } = await import('./schools.js').catch(() => ({ SCHOOLS: [] }));
+  const hasList = SCHOOLS.length > 0;
+  const d = draft || { dn: p.display_name || '', gr: p.grade || '', code: p.school_code || '', school: p.school || '' };
+  // 從學校代碼找回縣市
+  let county = '';
+  if (d.code) for (const [c, list] of SCHOOLS) if (list.some((s) => s[0] === d.code)) county = c;
+  const manual = !hasList || (!county && !!d.school);
+  if (manual && hasList && d.school) county = '__other';
+  const missing = p.display_name && !profileComplete(p);
+
+  const pr = modal({
+    title: !p.display_name ? '第一次登入：填寫考生資料' : required ? '請補填考生資料' : '編輯考生資料',
+    body: `${missing && required ? '<div class="notice warn" style="margin-bottom:12px"><span>報名需要年級和學校，請補填後再繼續。</span></div>' : ''}
+      <p class="muted">暱稱會出現在准考證和排行榜上，請不要填真實全名。</p>
+      ${!p.display_name ? '<p class="muted" style="font-size:.85rem">繼續使用即表示同意<a href="terms.html" target="_blank">使用條款</a>與<a href="privacy.html" target="_blank">隱私權政策</a>。未滿 18 歲請先經家長同意。</p>' : ''}
+      <label class="field"><span>暱稱（必填，20 字內）</span><input name="dn" maxlength="20" value="${esc(d.dn)}"></label>
+      <label class="field"><span>年級（必填）</span><select name="gr"><option value="">請選擇</option>${GRADES.map((g) => `<option ${d.gr === g ? 'selected' : ''}>${g}</option>`).join('')}</select></label>
+      <div class="field"><span>學校（必填）</span>
+        ${hasList ? `<div class="school-pick">
+          <select name="county" aria-label="縣市"><option value="">選擇縣市</option>${SCHOOLS.map(([c]) => `<option ${county === c ? 'selected' : ''}>${c}</option>`).join('')}
+            <option value="__other" ${county === '__other' ? 'selected' : ''}>其他（自學、實驗教育、海外等）</option></select>
+          <select name="sch" aria-label="學校"></select>
+        </div>` : ''}
+        <input name="sc" maxlength="40" placeholder="請輸入學校全名，例如：臺北市立大安國中" value="${esc(manual ? d.school : '')}">
+      </div>`,
     confirmText: '儲存', cancelText: required ? '' : '取消',
   });
-  if (!w) return false;
+  const w = $$('.modal-wrap').at(-1);
+  const cSel = $('[name=county]', w), sSel = $('[name=sch]', w), scIn = $('[name=sc]', w);
+  const fillSchools = (keep) => {
+    if (!cSel) return;
+    const c = cSel.value;
+    const list = SCHOOLS.find(([x]) => x === c)?.[1] || [];
+    sSel.innerHTML = c === '__other' ? '' : `<option value="">${c ? '選擇學校' : '先選縣市'}</option>${list.map(([code, name]) => `<option value="${code}" ${keep === code ? 'selected' : ''}>${esc(name)}</option>`).join('')}
+      ${c ? '<option value="__manual">找不到我的學校，自行填寫</option>' : ''}`;
+    if (keep === '__manual') sSel.value = '__manual';
+    sSel.style.display = c === '__other' ? 'none' : '';
+    sSel.disabled = !c;
+    const typing = c === '__other' || sSel.value === '__manual';
+    scIn.style.display = typing ? '' : 'none';
+    if (typing && document.activeElement !== scIn) scIn.focus();
+  };
+  if (cSel) {
+    fillSchools(d.code || (manual && county !== '__other' && d.school ? '__manual' : ''));
+    cSel.onchange = () => { fillSchools(''); };
+    sSel.onchange = () => fillSchools(sSel.value);
+  }
+
+  if (!(await pr)) return false;
   const dn = $('[name=dn]', w).value.trim();
-  if (!dn) { toast('請填寫暱稱', 'error'); return editProfile(required); }
-  const { error } = await sb.from('profiles').update({
-    display_name: dn, grade: $('[name=gr]', w).value || null, school: $('[name=sc]', w).value.trim() || null,
-  }).eq('id', app.user.id);
-  if (error) { toast(rpcError(error), 'error'); return false; }
+  const gr = $('[name=gr]', w).value;
+  let code = null, school = '';
+  const typed = !cSel || cSel.value === '__other' || sSel.value === '__manual';
+  if (typed) school = scIn.value.trim();
+  else if (sSel.value) {
+    const hit = SCHOOLS.find(([x]) => x === cSel.value)[1].find((s) => s[0] === sSel.value);
+    code = hit[0]; school = hit[2];
+  }
+  const next = { dn, gr, code: code || (typed ? '' : d.code), school: typed ? school : (school || '') };
+  const err = !dn ? '請填寫暱稱' : !gr ? '請選擇年級' : !school ? (typed ? '請輸入學校名稱' : '請選擇學校') : '';
+  if (err) { toast(err, 'error'); return editProfile(required, { ...next, code: typed ? '' : sSel?.value || '', school: typed ? scIn.value : '' }); }
+
+  const { error } = await sb.from('profiles').update({ display_name: dn, grade: gr, school, school_code: code }).eq('id', app.user.id);
+  if (error) { toast(rpcError(error), 'error'); return editProfile(required, next); }
   await loadProfile();
   renderHeader();
   toast('已儲存考生資料');
@@ -365,7 +416,9 @@ export async function boot() {
     if (ev === 'SIGNED_OUT') { app.user = null; app.profile = null; }
     app.session = session;
   });
+  // 第一次登入要填暱稱；一般考生缺年級或學校也要補填（管理員只需要暱稱）
   if (app.user && app.profile && !app.profile.display_name) await editProfile(true);
+  else if (app.user && app.profile && !app.isAdmin && !profileComplete(app.profile)) editProfile(true);   // 頁面照常載入，表單蓋在上面
   return app;
 }
 

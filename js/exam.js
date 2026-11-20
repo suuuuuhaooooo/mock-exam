@@ -1,6 +1,7 @@
 import {
   sb, boot, app, $, $$, esc, fmt, icon, qs, toast, modal, rpcError, pct, printSection,
   timelineHTML, reached, within, statusOf, nextMilestone, countdown, loginPrompt, LOGO,
+  profileComplete, editProfile,
 } from './core.js';
 import { unitCompare, validity } from './stats.js';
 import { ratioBar } from './charts.js';
@@ -292,6 +293,7 @@ function bind() {
   $('#reg-btn')?.addEventListener('click', async (ev) => {
     const btn = ev.currentTarget;
     if (!$('#agree')?.checked) return toast('請先勾選同意使用條款與隱私權政策', 'error');
+    if (!profileComplete(app.profile) && !(await editProfile(true))) return;
     btn.disabled = true;
     const { data, error } = await sb.rpc('register_exam', { p_exam: id, p_group_code: $('#gcode')?.value.trim() || null });
     if (error) { toast(rpcError(error), 'error'); btn.disabled = false; return; }
