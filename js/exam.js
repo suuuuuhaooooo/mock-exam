@@ -111,7 +111,8 @@ function registrationHTML() {
       <p>報名後會自動產生准考證號，登錄答案和查看成績都需要它。${exam.capacity ? `本場名額 ${exam.capacity} 人，額滿為止。` : ''}</p>
       ${rulesHTML()}
       ${exam.group_enabled ? `<label class="field" style="max-width:320px"><span>團報代碼（跟補習班或老師一起報名才需要填）</span><input id="gcode" maxlength="12" placeholder="例如 AB12CD"></label>` : ''}
-      <button class="btn primary" id="reg-btn">${icon('ticket')}<span>確認報名</span></button>
+      <label class="check agree"><input type="checkbox" id="agree"> <span>我已閱讀並同意<a href="terms.html" target="_blank">使用條款與應試規則</a>和<a href="privacy.html" target="_blank">隱私權政策</a>，了解題本僅限本人閱覽、答案只能送出一次。未滿 18 歲者，已取得家長同意。</span></label>
+      <button class="btn primary" id="reg-btn" disabled>${icon('ticket')}<span>確認報名</span></button>
     </section>`;
   }
   return `<section class="sheet"><div class="notice warn">${icon('clock')}<span>${
@@ -120,7 +121,7 @@ function registrationHTML() {
 
 function linksHTML() {
   const items = [];
-  if (state.booklet_url) items.push(`<a class="btn" href="${esc(state.booklet_url)}" target="_blank" rel="noopener">${icon('book')}<span>下載題本</span></a>`);
+  if (state.booklet_url) items.push(`<a class="btn" href="${esc(state.booklet_url)}" target="_blank" rel="noopener">${icon('book')}<span>線上閱覽題本</span></a>`);
   if (state.solution_url) items.push(`<a class="btn" href="${esc(state.solution_url)}" target="_blank" rel="noopener">${icon('link')}<span>詳解</span></a>`);
   if (reached(exam.release_report_at, now()) || app.isAdmin) items.push(`<a class="btn" href="report.html?id=${exam.id}">${icon('chart')}<span>全體分析報告</span></a>`);
   const locked = [];
@@ -129,7 +130,7 @@ function linksHTML() {
   if (exam.release_report_at && !reached(exam.release_report_at, now())) locked.push(`全體分析 ${fmt(exam.release_report_at, false)}`);
   // 題本、詳解只給有報名的考生（後端也只回傳給報名者）
   const regOnly = !state.registration && !app.isAdmin && (exam.exam_start || exam.release_solution_at)
-    ? `<div class="notice warn" style="margin-top:12px">${icon('lock')}<span>題本與詳解只開放給<b>已報名</b>的考生下載${
+    ? `<div class="notice warn" style="margin-top:12px">${icon('lock')}<span>題本與詳解只開放給<b>已報名</b>的考生線上閱覽${
         !app.user ? '，請先登入並報名。' : canRegister() ? '，請先完成上方報名。' : '。'}</span></div>` : '';
   if (!items.length && !locked.length && !regOnly) return '';
   return `<section class="sheet"><div class="sheet-head"><h2>${icon('book')} 題本與資料</h2></div>
@@ -287,8 +288,10 @@ function boardHTML() {
 
 function bind() {
   // 注意：await 之後 ev.currentTarget 會變成 null，按鈕要先存起來
+  $('#agree')?.addEventListener('change', (e) => { $('#reg-btn').disabled = !e.target.checked; });
   $('#reg-btn')?.addEventListener('click', async (ev) => {
     const btn = ev.currentTarget;
+    if (!$('#agree')?.checked) return toast('請先勾選同意使用條款與隱私權政策', 'error');
     btn.disabled = true;
     const { data, error } = await sb.rpc('register_exam', { p_exam: id, p_group_code: $('#gcode')?.value.trim() || null });
     if (error) { toast(rpcError(error), 'error'); btn.disabled = false; return; }

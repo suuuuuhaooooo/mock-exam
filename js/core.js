@@ -107,7 +107,10 @@ matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => appl
  * 前端保護：禁止右鍵、選取、複製、拖曳、常見開發者工具快捷鍵
  * （真正的資料保護在後端的存取規則與時間鎖）
  * ------------------------------------------------------------------ */
-const editable = (el) => el && (el.closest?.('input, textarea, select, [contenteditable="true"]'));
+const editable = (el) => {
+  const n = el?.nodeType === 3 ? el.parentElement : el;
+  return !!n?.closest?.('input, textarea, select, [contenteditable="true"], .legal');
+};
 document.addEventListener('contextmenu', (e) => { if (!editable(e.target)) e.preventDefault(); });
 document.addEventListener('selectstart', (e) => { if (!editable(e.target)) e.preventDefault(); });
 ['copy', 'cut'].forEach((t) => document.addEventListener(t, (e) => { if (!editable(e.target)) e.preventDefault(); }));
@@ -268,6 +271,7 @@ export async function editProfile(required = false) {
   const w = await modal({
     title: required ? '第一次登入：填寫考生資料' : '編輯考生資料',
     body: `<p class="muted">暱稱會出現在准考證和排行榜上，請不要填真實全名。</p>
+      ${required ? '<p class="muted" style="font-size:.85rem">繼續使用即表示同意<a href="terms.html" target="_blank">使用條款</a>與<a href="privacy.html" target="_blank">隱私權政策</a>。未滿 18 歲請先經家長同意。</p>' : ''}
       <label class="field"><span>暱稱（必填，20 字內）</span><input name="dn" maxlength="20" value="${esc(p.display_name || '')}"></label>
       <label class="field"><span>年級</span><select name="gr"><option value="">不填</option>${grades.map((g) => `<option ${p.grade === g ? 'selected' : ''}>${g}</option>`).join('')}</select></label>
       <label class="field"><span>學校（選填）</span><input name="sc" maxlength="40" value="${esc(p.school || '')}"></label>`,
@@ -320,7 +324,7 @@ const GOOGLE_G = `<svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path 
 
 // 授權標章：Creative Commons 官方 SVG（向量，任何縮放、高解析螢幕都不會糊）
 const CC = {
-  label: 'CC BY-NC-ND 4.0',
+  label: 'CC BY-NC-ND 4.0（網站說明文字；題本、詳解除外）',
   deed: 'https://creativecommons.org/licenses/by-nc-nd/4.0/deed.zh_TW',
   badge: 'https://mirrors.creativecommons.org/presskit/buttons/88x31/svg/by-nc-nd.svg',
 };
@@ -330,10 +334,12 @@ function renderFooter() {
   if (!f) return;
   f.innerHTML = `
     <div class="foot-inner">
-      <div class="foot-brand">${LOGO}<div><b>${esc(SITE_NAME)}</b><small>題本與詳解版權所有，請勿轉載。</small></div></div>
+      <div class="foot-brand">${LOGO}<div><b>${esc(SITE_NAME)}</b><small>題本、詳解與試題分析保留所有權利，未經同意不得轉載。</small></div></div>
       <div class="foot-links">
         <a href="${AUTHOR.threads}" target="_blank" rel="noopener">Threads @suuuuuhaooooo</a>
         <a href="${AUTHOR.sponsor}" target="_blank" rel="noopener">贊助作者</a>
+        <a href="terms.html">使用條款</a>
+        <a href="privacy.html">隱私權政策</a>
       </div>
       <div class="foot-cc">
         <a href="${CC.deed}" target="_blank" rel="noopener license" title="${CC.label}">

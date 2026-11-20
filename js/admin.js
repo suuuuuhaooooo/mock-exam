@@ -16,7 +16,7 @@ const TABS = [
 ];
 const TIME_FIELDS = [
   ['register_start', '報名開始'], ['register_end', '報名截止'],
-  ['exam_start', '題本開放下載'], ['answer_start', '登錄答案開始'],
+  ['exam_start', '題本開放閱覽'], ['answer_start', '登錄答案開始'],
   ['answer_end', '登錄答案截止'], ['release_key_at', '公布正解'],
   ['release_score_at', '公布成績單'], ['release_solution_at', '公布詳解連結'],
   ['release_rank_at', '公布排名'], ['release_report_at', '公布全體分析'],
@@ -137,8 +137,8 @@ async function editor(eid, copy = false) {
       </fieldset>
 
       <fieldset><legend>題本與詳解</legend>
-        <p class="muted">放雲端硬碟或任何網址。題本在「題本開放下載」之後、詳解在「公布詳解連結」之後才會出現在考場頁；時間到之前，學生連網址都拿不到；時間到了，也只有<b>已報名</b>的考生拿得到（沒報名、沒登入的人看不到）。</p>
-        <p class="muted">提醒：雲端硬碟連結如果設成「知道連結的人都能檢視」，報名者還是可以把網址轉給別人。</p>
+        <p class="muted">放雲端硬碟或任何網址。題本在「題本開放閱覽」之後、詳解在「公布詳解連結」之後才會出現在考場頁；時間到之前，學生連網址都拿不到；時間到了，也只有<b>已報名</b>的考生拿得到（沒報名、沒登入的人看不到）。</p>
+        <p class="muted">提醒：題本只開放線上閱覽的話，記得在雲端硬碟的共用設定（齒輪）取消勾選「檢視者和加入者可以看到下載、列印和複製選項」。連結如果設成「知道連結的人都能檢視」，報名者還是可以把網址轉給別人。</p>
         <div class="grid-2">
           <label class="field"><span>題本連結</span><input name="booklet_url" type="url" value="${esc(links.booklet_url || '')}" placeholder="https://"></label>
           <label class="field"><span>詳解連結</span><input name="solution_url" type="url" value="${esc(links.solution_url || '')}" placeholder="https://"></label>

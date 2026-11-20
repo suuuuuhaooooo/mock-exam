@@ -48,7 +48,7 @@ main.innerHTML = `
       </div>
       <div class="steps">
         <div><span class="n">01</span><b>報名</b>領取准考證號</div>
-        <div><span class="n">02</span><b>應考</b>下載題本，計時作答</div>
+        <div><span class="n">02</span><b>應考</b>線上閱覽題本，計時作答</div>
         <div><span class="n">03</span><b>登錄答案</b>只能送出一次</div>
         <div><span class="n">04</span><b>成績單</b>等級、PR、弱點分析</div>
       </div>
