@@ -416,7 +416,7 @@ function renderFooter() {
 }
 
 /** 每個頁面一開始呼叫：載入登入狀態、畫頁首頁尾 */
-export async function boot() {
+export async function boot({ askProfile = true } = {}) {
   const { data } = await sb.auth.getSession();
   app.session = data.session;
   app.user = data.session?.user || null;
@@ -428,9 +428,20 @@ export async function boot() {
     if (ev === 'SIGNED_OUT') { app.user = null; app.profile = null; }
     app.session = session;
   });
-  // 第一次登入要填暱稱；一般考生缺年級或學校也要補填（管理員只需要暱稱）
-  if (app.user && app.profile && !app.profile.display_name) await editProfile(true);
-  else if (app.user && app.profile && !app.isAdmin && !profileComplete(app.profile)) editProfile(true);   // 頁面照常載入，表單蓋在上面
+  // 考生資料沒填齊（管理員只需要暱稱）：先填完才載入頁面內容，表單不能關閉
+  // 條款、隱私權頁例外，讓第一次登入的人可以先看條款
+  const incomplete = () => app.user && (!app.profile?.display_name || (!app.isAdmin && !profileComplete(app.profile)));
+  if (askProfile && incomplete()) {
+    if (!app.profile) {
+      // 找不到考生資料列（正常情況不會發生）：提示重新整理，不讓頁面繼續
+      $('#main') && ($('#main').innerHTML = `<div class="empty">${icon('alert', 'big')}<p>讀不到你的考生資料，請重新整理頁面；一直這樣的話請聯絡主辦人。</p></div>`);
+      return new Promise(() => {});
+    }
+    const main = $('#main');
+    if (main) main.inert = true;          // 背後的頁面不能點、也不能用 Tab 跳過去
+    while (incomplete()) await editProfile(true);
+    if (main) main.inert = false;
+  }
   return app;
 }
 
