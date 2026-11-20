@@ -344,7 +344,7 @@ async function tabRegs(sel) {
       <label class="field" style="margin:0;min-width:300px"><select id="esel">${examOptions(sel)}</select></label></div>
     <div class="toolbar">
       <label class="field"><span>搜尋（准考證、暱稱、email、學校）</span><input id="q"></label>
-      <button class="btn sm primary" id="mail" disabled>${icon('mail')}<span>寄提醒信</span></button>
+      <button class="btn sm primary" id="mail" disabled>${icon('pencil')}<span>寫提醒信</span></button>
       <button class="btn sm" id="csv">${icon('download')}<span>匯出 CSV</span></button>
       <a class="btn sm" href="report.html?id=${sel}">${icon('chart')}<span>分析報告</span></a>
       <button class="btn sm" id="anon">${icon('shield')}<span>匿名化本場個資</span></button>
@@ -427,7 +427,7 @@ async function tabRegs(sel) {
 
   const pending = rows.filter((x) => !x.sub && !x.profiles?.banned && x.profiles?.email);
   $('#mail').disabled = false;
-  $('#mail span').textContent = `寄提醒信（未交卷 ${pending.length} 人）`;
+  $('#mail span').textContent = `寫提醒信（未交卷 ${pending.length} 人）`;
   $('#mail').onclick = () => mailComposer(e, rows, () => { $('.toolbar').style.display = ''; draw(); });
 
   $('#csv').onclick = () => {
@@ -656,7 +656,8 @@ async function mailComposer(e, rows, back) {
   body.innerHTML = `
     <div class="mail-head">
       <button class="btn sm ghost" id="mback">← 返回名單</button>
-      <h3>寄提醒信：${esc(e.code)}｜${esc(e.title)}</h3>
+      <h3>寫提醒信：${esc(e.code)}｜${esc(e.title)}</h3>
+      <span class="muted">這裡只是編輯，按最下面的「寄出」並確認後才會寄。</span>
     </div>
     ${closed ? `<div class="notice warn">${icon('alert')}<span>登錄答案已經在 ${fmt(e.answer_end)} 截止，學生收到信也無法再送出。</span></div>` : ''}
     <div class="mail-grid">
