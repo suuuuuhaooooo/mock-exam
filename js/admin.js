@@ -1,6 +1,6 @@
 import {
   sb, boot, app, $, $$, esc, fmt, icon, toast, modal, rpcError, csvDownload,
-  toLocalInput, fromLocalInput, statusOf, loginPrompt, qs,
+  toLocalInput, fromLocalInput, statusOf, loginPrompt, qs, profileDialog,
 } from './core.js';
 import { CAP_NATURE_115, normKey, score, levelOf, bandOf, validity } from './stats.js';
 import { MAIL_VARS, DEFAULT_MAIL, mailVars, fill, unknownVars, toHtml } from './mailtpl.js';
@@ -532,18 +532,39 @@ async function tabUsers() {
   pane.innerHTML = `<section class="sheet">
     <div class="sheet-head"><h2>${icon('user')} 使用者</h2><span class="muted">共 ${data?.length || 0} 人</span></div>
     ${error ? `<div class="notice err">${esc(error.message)}</div>` : ''}
-    <div class="toolbar"><label class="field"><span>搜尋</span><input id="uq"></label>
+    <div class="toolbar"><label class="field"><span>搜尋（email、暱稱、學校）</span><input id="uq"></label>
+      <label class="check" style="margin:0 0 8px"><input type="checkbox" id="uself"> 只看自行填寫學校的人（<span id="uselfn">0</span>）</label>
+      <label class="check" style="margin:0 0 8px"><input type="checkbox" id="umiss"> 只看資料沒填齊的人（<span id="umissn">0</span>）</label>
       <button class="btn sm" id="ucsv">${icon('download')}<span>匯出 CSV</span></button></div>
     <div class="table-wrap tall" id="ubody"></div></section>`;
   const draw = () => {
     const q = $('#uq').value.trim().toLowerCase();
-    const list = (data || []).filter((u) => !q || [u.email, u.display_name, u.school].some((v) => (v || '').toLowerCase().includes(q)));
+    const selfOnly = $('#uself').checked, missOnly = $('#umiss').checked;
+    const isSelf = (u) => !!u.school && !u.school_code;
+    const isMiss = (u) => !u.display_name || !u.grade || !u.school;
+    $('#uselfn').textContent = (data || []).filter(isSelf).length;
+    $('#umissn').textContent = (data || []).filter(isMiss).length;
+    const list = (data || []).filter((u) => (!q || [u.email, u.display_name, u.school].some((v) => (v || '').toLowerCase().includes(q)))
+      && (!selfOnly || isSelf(u)) && (!missOnly || isMiss(u)));
     $('#ubody').innerHTML = `<table><thead><tr><th>Email</th><th>暱稱</th><th>年級</th><th>學校</th><th>角色</th><th>停權</th><th>加入時間</th><th>操作</th></tr></thead>
-      <tbody>${list.map((u) => `<tr data-id="${u.id}"><td>${esc(u.email)}</td><td>${esc(u.display_name || '')}</td><td>${esc(u.grade || '')}</td><td>${esc(u.school || '')}</td>
+      <tbody>${list.map((u) => `<tr data-id="${u.id}"><td>${esc(u.email)}</td><td>${esc(u.display_name || '')}</td><td>${esc(u.grade || '')}</td><td class="wrap">${esc(u.school || '')}${isSelf(u) ? ' <span class="tag amber" title="不在教育部名錄裡，是自己輸入的">自填</span>' : ''}</td>
         <td><select class="role" ${u.id === app.user.id ? 'disabled' : ''}><option value="student" ${u.role === 'student' ? 'selected' : ''}>學生</option><option value="admin" ${u.role === 'admin' ? 'selected' : ''}>管理員</option></select></td>
         <td>${u.id === app.user.id ? '' : `<label class="check" style="margin:0"><input type="checkbox" class="ban" ${u.banned ? 'checked' : ''}> 停權</label>`}</td>
         <td>${fmt(u.created_at, false)}</td>
-        <td>${u.id === app.user.id ? '<span class="muted">你自己</span>' : `<button class="btn xs" data-udel style="color:var(--stamp)">刪除帳號</button>`}</td></tr>`).join('')}</tbody></table>`;
+        <td><div class="btn-row"><button class="btn xs" data-uedit>編輯資料</button>${u.id === app.user.id ? '' : `<button class="btn xs" data-udel style="color:var(--stamp)">刪除帳號</button>`}</div></td></tr>`).join('')}</tbody></table>`;
+    $$('[data-uedit]').forEach((b) => (b.onclick = async () => {
+      const u = data.find((x) => x.id === b.closest('tr').dataset.id);
+      const v = await profileDialog(u, {
+        title: `修改考生資料：${u.email}`,
+        intro: isSelf(u) ? `<p class="muted">學生自己填的學校是「<b>${esc(u.school)}</b>」。如果名錄裡有這所學校，請改從選單選，才會記錄學校代碼。</p>` : '',
+      });
+      if (!v) return;
+      const { error: er } = await sb.from('profiles').update(v).eq('id', u.id);
+      if (er) return toast(rpcError(er), 'error');
+      Object.assign(u, v);
+      toast('已更新考生資料');
+      draw();
+    }));
     $$('.role').forEach((s) => (s.onchange = async () => {
       const tr = s.closest('tr');
       if (s.value === 'admin' && !(await modal({ title: '設為管理員？', body: '<p>管理員可以看到所有學生資料，也能刪除任何資料。</p>', confirmText: '確定' }))) { s.value = 'student'; return; }
@@ -569,9 +590,11 @@ async function tabUsers() {
     }));
   };
   $('#uq').oninput = draw;
+  $('#uself').onchange = draw;
+  $('#umiss').onchange = draw;
   draw();
-  $('#ucsv').onclick = () => csvDownload('使用者.csv', [['Email', '暱稱', '年級', '學校', '角色', '加入時間'],
-    ...(data || []).map((u) => [u.email, u.display_name, u.grade, u.school, u.role, fmt(u.created_at)])]);
+  $('#ucsv').onclick = () => csvDownload('使用者.csv', [['Email', '暱稱', '年級', '學校', '學校代碼', '角色', '加入時間'],
+    ...(data || []).map((u) => [u.email, u.display_name, u.grade, u.school, u.school_code ?? '', u.role, fmt(u.created_at)])]);
 }
 
 /* ================================================================

@@ -271,23 +271,20 @@ export const GRADES = ['國一', '國二', '國三', '高中', '其他'];
 // 考生資料是否齊全（報名需要暱稱、年級、學校）
 export const profileComplete = (p) => !!(p?.display_name && p?.grade && p?.school);
 
-export async function editProfile(required = false, draft = null) {
-  const p = app.profile || {};
+// 考生資料表單（學生自己編輯、後台幫忙修改都用這個）
+// 回傳 { display_name, grade, school, school_code }，取消則回傳 false
+export async function profileDialog(p, { title, required = false, notice = '', intro = '', draft = null } = {}) {
   const { SCHOOLS } = await import('./schools.js').catch(() => ({ SCHOOLS: [] }));
   const hasList = SCHOOLS.length > 0;
   const d = draft || { dn: p.display_name || '', gr: p.grade || '', code: p.school_code || '', school: p.school || '' };
-  // 從學校代碼找回縣市
   let county = '';
   if (d.code) for (const [c, list] of SCHOOLS) if (list.some((s) => s[0] === d.code)) county = c;
   const manual = !hasList || (!county && !!d.school);
   if (manual && hasList && d.school) county = '__other';
-  const missing = p.display_name && !profileComplete(p);
 
   const pr = modal({
-    title: !p.display_name ? '第一次登入：填寫考生資料' : required ? '請補填考生資料' : '編輯考生資料',
-    body: `${missing && required ? '<div class="notice warn" style="margin-bottom:12px"><span>報名需要年級和學校，請補填後再繼續。</span></div>' : ''}
-      <p class="muted">暱稱會出現在准考證和排行榜上，請不要填真實全名。</p>
-      ${!p.display_name ? '<p class="muted" style="font-size:.85rem">繼續使用即表示同意<a href="terms.html" target="_blank">使用條款</a>與<a href="privacy.html" target="_blank">隱私權政策</a>。未滿 18 歲請先經家長同意。</p>' : ''}
+    title,
+    body: `${notice ? `<div class="notice warn" style="margin-bottom:12px"><span>${notice}</span></div>` : ''}${intro}
       <label class="field"><span>暱稱（必填，20 字內）</span><input name="dn" maxlength="20" value="${esc(d.dn)}"></label>
       <label class="field"><span>年級（必填）</span><select name="gr"><option value="">請選擇</option>${GRADES.map((g) => `<option ${d.gr === g ? 'selected' : ''}>${g}</option>`).join('')}</select></label>
       <div class="field"><span>學校（必填）</span>
@@ -317,7 +314,7 @@ export async function editProfile(required = false, draft = null) {
   };
   if (cSel) {
     fillSchools(d.code || (manual && county !== '__other' && d.school ? '__manual' : ''));
-    cSel.onchange = () => { fillSchools(''); };
+    cSel.onchange = () => fillSchools('');
     sSel.onchange = () => fillSchools(sSel.value);
   }
 
@@ -331,12 +328,27 @@ export async function editProfile(required = false, draft = null) {
     const hit = SCHOOLS.find(([x]) => x === cSel.value)[1].find((s) => s[0] === sSel.value);
     code = hit[0]; school = hit[2];
   }
-  const next = { dn, gr, code: code || (typed ? '' : d.code), school: typed ? school : (school || '') };
   const err = !dn ? '請填寫暱稱' : !gr ? '請選擇年級' : !school ? (typed ? '請輸入學校名稱' : '請選擇學校') : '';
-  if (err) { toast(err, 'error'); return editProfile(required, { ...next, code: typed ? '' : sSel?.value || '', school: typed ? scIn.value : '' }); }
+  if (err) {
+    toast(err, 'error');
+    return profileDialog(p, { title, required, notice, intro, draft: { dn, gr, code: typed ? '' : sSel?.value || '', school: typed ? scIn.value : '' } });
+  }
+  return { display_name: dn, grade: gr, school, school_code: code };
+}
 
-  const { error } = await sb.from('profiles').update({ display_name: dn, grade: gr, school, school_code: code }).eq('id', app.user.id);
-  if (error) { toast(rpcError(error), 'error'); return editProfile(required, next); }
+export async function editProfile(required = false) {
+  const p = app.profile || {};
+  const first = !p.display_name;
+  const v = await profileDialog(p, {
+    title: first ? '第一次登入：填寫考生資料' : required ? '請補填考生資料' : '編輯考生資料',
+    required,
+    notice: !first && required && !profileComplete(p) ? '報名需要年級和學校，請補填後再繼續。' : '',
+    intro: `<p class="muted">暱稱會出現在准考證和排行榜上，請不要填真實全名。</p>
+      ${first ? '<p class="muted" style="font-size:.85rem">繼續使用即表示同意<a href="terms.html" target="_blank">使用條款</a>與<a href="privacy.html" target="_blank">隱私權政策</a>。未滿 18 歲請先經家長同意。</p>' : ''}`,
+  });
+  if (!v) return false;
+  const { error } = await sb.from('profiles').update(v).eq('id', app.user.id);
+  if (error) { toast(rpcError(error), 'error'); return editProfile(required); }
   await loadProfile();
   renderHeader();
   toast('已儲存考生資料');
