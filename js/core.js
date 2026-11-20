@@ -109,7 +109,7 @@ matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => appl
  * ------------------------------------------------------------------ */
 const editable = (el) => {
   const n = el?.nodeType === 3 ? el.parentElement : el;
-  return !!n?.closest?.('input, textarea, select, [contenteditable="true"], .legal');
+  return !!n?.closest?.('input, textarea, select, [contenteditable="true"]');
 };
 document.addEventListener('contextmenu', (e) => { if (!editable(e.target)) e.preventDefault(); });
 document.addEventListener('selectstart', (e) => { if (!editable(e.target)) e.preventDefault(); });

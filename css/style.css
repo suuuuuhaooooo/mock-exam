@@ -383,6 +383,5 @@ a.btn { text-decoration: none; }
 .legal th { background: var(--paper-2); }
 .legal td:first-child { white-space: nowrap; font-weight: 500; }
 .legal a { color: var(--accent); }
-.legal { user-select: text; -webkit-user-select: text; }
 .agree { margin: 14px 0; line-height: 1.7; }
 .agree a { color: var(--accent); }
